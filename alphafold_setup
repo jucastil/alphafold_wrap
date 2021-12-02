@@ -1,0 +1,125 @@
+#!/bin/bash
+
+function print_warning_setup(){
+	
+	tput setaf 1;
+	echo 
+	echo "	WARNING: alphafold will run only on specific nodes"
+	tput sgr0;
+	echo 
+	echo "	Alphafold will be installed in the current folder:"
+	echo
+	echo "	"$PWD
+	echo 
+	DIR="$PWD/alphafold/"
+}
+
+function print_starting_setup(){
+	echo
+	echo "	Starting setup";
+	tput setaf 2;
+	echo 
+	echo "	Cloning and updating alphafold"
+	echo
+	tput sgr0;
+}
+
+function print_doing_nothing(){
+	### message repeated
+	echo 
+	echo "	Doing nothing: Bye...";
+	echo
+}
+
+function print_help(){
+	echo 
+	echo "	alphafold_setup : setup your alphafold run";
+	echo
+}
+
+function update_previous_install(){
+	echo
+	echo "	Updating..."
+	echo
+	if [ -d "alphafold" ]; then
+		cd alphafold && git fetch origin main
+		tput setaf 2;
+		echo
+		echo "	...done"
+		echo
+		tput sgr0;
+	else
+		echo "	no alphafold folder found: exiting "
+		echo
+		exit 1
+	fi
+	
+}
+
+function customize_docker(){
+	
+	### edit the updated docker
+	sed -i "/ARG CUDA=11.0/c\ARG CUDA=11.1" $PWD/docker/Dockerfile #### change CUDA
+	tput setaf 2;
+	echo
+	echo "	...done. Building..."
+	echo
+	tput sgr0;
+	docker build -f docker/Dockerfile -t alphafold .
+	tput setaf 2;
+	echo
+	echo "	...done. Loading python, adding requirements..."
+	echo
+	tput sgr0;
+	module load python-3.7.3
+	pip3 install -r docker/requirements.txt
+	tput setaf 2;
+	echo
+	echo "	SETUP FINISHED. To run alphafold, type alphafold_run"
+	echo
+	tput sgr0;
+	
+}
+
+######### main ##################
+
+CONT="N"
+DIR="none"
+
+if [[ $# -eq 0 ]] ; then
+	print_warning_setup
+	read -p "	Continue (y/n)?" CONT
+	if [ "$CONT" = "y" ]; then
+		print_starting_setup
+		if [ -d "$DIR" ]; then
+			echo "	Found a previous install ${DIR}..."
+			read -p "	Update (y/n)?" CONT2
+			if [ "$CONT2" = "y" ]; then
+				update_previous_install
+				customize_docker
+			else
+				print_doing_nothing
+				exit 1
+			fi
+		else ### no previous install
+			echo " ${DIR} not found. Getting the code"
+			git clone https://github.com/deepmind/alphafold.git
+			echo
+			tput setaf 2;
+			echo "	...done. Updating ..."
+			echo
+			update_previous_install
+			customize_docker
+		fi
+	else
+		print_doing_nothing
+	fi
+else
+	if [[ $1 == *"h"* ]]; then
+		print_help              
+	elif [[ $1 == *"u"* ]]; then
+		update_previous_install
+	fi
+fi
+
+

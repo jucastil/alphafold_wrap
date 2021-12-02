@@ -1,0 +1,160 @@
+#!/bin/bash
+
+#DOCKERINFO=$PWD/dockerinfo.txt
+DOCKERINFO="/data_sbgamma/alphafold/"`whoami`".log"
+ALPHAFOLD_LOG="/home/admin/logs/alphafold/runresults.csv"
+LASTLOG=""
+
+function print_doing_nothing(){
+	### message repeated
+	echo 
+	echo "	Doing nothing: Bye...";
+	echo
+}
+
+function findlastlog(){
+
+	# GNU find + GNU sort (To the precision possible on the given OS, but returns only one result)
+	IFS= read -r -d '' latest < <(find $1 -type f -printf '%T@ %p\0' | sort -znr)
+	latest=${latest#* }   # remove timestamp + space
+	LASTLOG=$latest
+}
+
+function manualresultsupdload(){
+	### adds or modifies a entry on DOCKERINFO
+	tput setaf 1;
+	echo 
+	echo "	WARNING: creating manual alphafold upload"
+	echo
+	tput sgr0;
+	#echo "	Dockerinfo : " $DOCKERINFO
+	
+	read -p "	Proceed (y/n)?" MANUAL
+	
+	if [ "$MANUAL" = "y" ]; then
+		echo "		dockername is manual_upload"
+		echo "	-------------------------------"
+		read -p "	FASTA file(s) (example: T1050.fasta) ? " FASTA
+		if [ ! -e "$FASTA" ]; then 
+			tput setaf 1;
+			echo
+			echo "	FASTA file not found, exiting"
+			echo 
+			tput sgr0;
+			exit 1
+		fi
+		read -p "	started (example 2021_11_17_1110) ? " STARTED
+		read -p "	uptime (example Up 2 hours) ? " FINISHED
+		read -p "	results  (OK/NOK/Crash)? " RESULTS
+		
+		
+		echo "manual_upload,"`whoami`","$FASTA","`grep -v ">" $FASTA | wc -m`","`hostname`","$STARTED","$FINISHED","$RESULTS 
+		#echo "manual_upload,"`whoami`","$FASTA","`grep -v ">" $FASTA | wc -m`","`hostname`","$STARTED","$FINISHED","$RESULTS >> $DOCKERINFO
+
+		
+		echo 
+		echo "	...results added"
+		echo
+	else
+		print_doing_nothing
+	fi
+}
+
+function updateinfo(){
+	echo
+	echo "	updating finishing time from log file closing time " $CLOSEDON
+	echo 
+	line_num=`awk '/NOT/ {c++; if (c>=250) {c=NR;exit}}END {print c}' $DOCKERINFO`
+	if [ -z "$line_num" ] 
+	then 
+		echo "	update not possible :: something went wrong"
+		exit 1 
+	else
+		sed  -i "$line_num,$ s/NOT/$CLOSEDON/g" $DOCKERINFO
+		tput setaf 1;
+		read -p "	RESULT (OK/NOK/running/crashed)? " RUNRESULT
+		tput sgr0;
+		sed  -i "$line_num,$ s/UNKNOWN/$RUNRESULT/g" $DOCKERINFO
+	fi
+}
+
+function uploadinfo(){
+	LASTLINE=`tail -1 dockerinfo.txt`
+	echo
+	echo "	Uploading: " $LASTLINE
+	echo $LASTLINE >> $ALPHAFOLD_LOG
+	echo
+	echo "	Done"
+}
+
+function correctonwership(){
+	read -p "	OUTPUT dir (example: results)? " RESULTS
+	if [ -d "$RESULTS" ]; then
+		tput setaf 2;
+		echo
+		echo "	Checking output dir ownership"
+		echo
+		tput sgr0;
+		sudo chown -R `whoami`:struktur $RESULTS
+		sudo chmod 777 $RESULTS
+		echo "	...done"
+	else
+		tput setaf 1;
+		echo
+		echo "	ERROR: folder not found"
+		echo
+		tput sgr0;
+		exit 1
+	fi
+
+}
+
+############### main script #######################
+
+
+if [[ $# -eq 0 ]] ; then
+
+	tput setaf 2;
+ 	echo 
+	echo "	Reviewing last alphafold results"
+	echo
+	tput sgr0;
+
+	read -p "	Continue (y/n)?" CONT
+
+	DATE=`date +%Y_%m_%d_%H%M`
+
+	if [ "$CONT" = "y" ]; then
+		correctonwership	
+		findlastlog .
+		CLOSEDON=`date -r $LASTLOG "+%Y_%m_%d_%H%M"`
+		echo 
+		echo "	Last log closed on: " $CLOSEDON
+		echo
+		echo "	Last alphafold run docker on register:"
+		echo 
+		tail -1 dockerinfo.txt | awk -F"," '{print "\t"$1}'
+		echo
+		read -p "	Update info (y/n)? " UPD
+		if [ "$UPD" = "y" ]; then
+			updateinfo
+		else
+			print_doing_nothing
+		fi
+		echo
+		read -p "	Upload to web (y/n)? " UPLOAD
+		if [ "$UPLOAD" = "y" ]; then
+			uploadinfo
+		else
+			print_doing_nothing
+		fi
+	else
+		print_doing_nothing
+	fi
+elif [[ $1 == *"--c"* ]]; then
+	correctonwership
+elif [[ $1 == *"--m"* ]]; then
+	manualresultsupdload
+fi
+
+

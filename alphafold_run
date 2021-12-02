@@ -1,0 +1,250 @@
+#!/bin/bash
+
+#####################################################
+#
+#	alphafold_run
+#	-creates a script to run alphafold
+#	-stores the run results
+#	v1.0 : JuanCastillo 2021_24_11
+################################################### 
+
+function print_doing_nothing(){
+	### message repeated
+	echo 
+	echo "	Doing nothing: Bye...";
+	echo
+}
+
+function print_help(){
+	### print usage tips
+	echo 
+    echo "	Usage : alphafold_run (arguments)"
+    echo 
+	echo "	(default)		: no arguments, user input"
+    echo "	--f fastaname	: fasta"
+    echo "	--t tempdate	: reference date"
+    echo "	--d outputdir 	: setup output dir for this run"
+	echo      
+    exit 0
+}
+
+function print_error_no_installation(){
+	### print error message
+	tput setaf 1;
+	echo 
+	echo "	ERROR: alphafold setup not found"
+	echo
+	echo "	- Are you in the right folder?"
+	echo " 	- Is your alphafold installed with a different name?"
+	echo " 	- Did you run alphafold_setup before?"
+	echo
+	echo " 	EXITING..."
+	echo
+	tput sgr0;
+}
+
+function print_warning_setup(){
+	### print warning message
+	tput setaf 1;
+	echo 
+	echo "	WARNING: you should have a docker setup"
+	echo "	if you are not sure please run alphafold_setup before"
+	echo
+	tput sgr0;
+}
+
+function check_directory(){
+	### check alphafold directory is there
+	DIR="$PWD/alphafold/"
+	if [ -d "$DIR" ]; then
+		echo "	Alphafold install found, continuing"
+	else
+		print_error_no_installation
+	fi
+	
+}
+
+function read_run_parameters(){
+	### read the run parameters
+	tput setaf 2;
+	echo
+	echo "	Configuring the run: please introduce the next parameters"
+	echo "	(CTRL+C to interrupt)"
+	echo
+	tput sgr0;
+	echo "	Please give the path if needed"
+	echo "	-------------------------------"
+	
+	read -p "	FASTA file(s) (example: T1050.fasta) ? " FASTA
+	if [ ! -e "$FASTA" ]; then 
+		tput setaf 1;
+		echo
+		echo "	FASTA file not found, exiting"
+		echo 
+		tput sgr0;
+		exit 1
+	fi
+	
+	read -p "	TEMPLATE date (example: 2021-08-11)? " TEMPDATE
+	
+	read -p "	OUTPUT dir (example: results)? " RESULTS			
+	if [ -d "$RESULTS" ]; then
+		tput setaf 2;
+		echo "	Output dir FOUND, set to ${RESULTS}"
+		tput sgr0;
+	else
+		tput setaf 2;
+		echo "	Folder ${RESULTS} not found, making it"
+		tput sgr0;
+		mkdir $RESULTS
+		chmod 777 $RESULTS
+	fi
+
+}
+
+function print_run_parameters(){
+	### just print the current values
+	echo "	---------------RUN CONFIG----------------"
+	echo "	FASTA file(s)		: " $FASTA
+	echo "	TEMPLATE date 		: " $TEMPDATE
+	echo "	OUTPUT dir 		: " $RESULTS
+	echo "	Multimer 		: " $MULTI			
+	echo "	run script		: " $RUN_SCRIPT
+	echo "	alphafold script	: " $RUN_DATE 
+	echo "	---------------RUN CONFIG----------------"
+	echo
+}
+
+function print_ready(){
+	### just print ready
+	tput setaf 2;
+	echo
+	echo "	Everything is ready"
+	echo
+	tput sgr0;	
+	
+}
+
+function write_run_script(){
+	### write the docker submission script
+	ALPHA_OUT=$PWD/$RESULTS
+	RUN_FILE=`find $PWD -type f -name run_docker.py`
+	DATE=`date +%Y_%m_%d_%H%M`
+	RUN_DATE="run_docker_"$DATE".py"
+	RUN_SCRIPT="run_docker_"$DATE".sh"
+
+	cp $RUN_FILE  $RUN_DATE 							### copy the default script
+	sed -i "s|/tmp/alphafold|$ALPHA_OUT|g" $RUN_DATE 	### replace output folder on the default script
+	### writing of the file
+	echo "#!/bin/bash" >> $RUN_SCRIPT
+	echo "" >> $RUN_SCRIPT
+	echo "module load python-3.7.3" >> $RUN_SCRIPT	
+	if [ "$MULTI" = "y" ]; then
+		MODELPRESET="multimer"
+		#read -p "	Procaryote list (example=true,false)? " PROCA
+		echo "python3 $RUN_DATE --fasta_paths=$FASTA --max_template_date=$TEMPDATE --model_preset=$MODELPRESET  --data_dir=/home/admin/genetic_database_new/ " >> $RUN_SCRIPT	
+	else
+		MODELPRESET="monomer"
+		echo "python3 $RUN_DATE --fasta_paths=$FASTA --max_template_date=$TEMPDATE --model_preset=$MODELPRESET  --data_dir=/home/admin/genetic_database_new/ "  >> $RUN_SCRIPT
+	fi
+	chmod 777 $RUN_SCRIPT
+		
+}
+
+function run_script(){
+	
+	if [ -d "$RESULTS" ]; then
+	
+		RUN_LOG="run_docker_"$DATE".log"
+		./$RUN_SCRIPT >> $RUN_LOG 2>&1 &
+		sleep 5
+		DOCKERNAME=`docker ps -a --latest --format "{{.Names}}"`
+		echo
+		echo " 	... docker running : codename " $DOCKERNAME
+		echo
+		echo $DOCKERNAME","`whoami`","$FASTA","`grep -v ">" $FASTA | wc -m`","`hostname`","$DATE",NOT,UNKNOWN" >> $DOCKERINFO
+		echo $DOCKERNAME","`whoami`","$FASTA","`grep -v ">" $FASTA | wc -m`","`hostname`","$DATE",NOT,UNKNOWN" >> $DOCKERUSERLOG	
+	
+	else
+		echo "	[ERROR] : results folder not found."
+		echo " 	Try:  mkdir " $RESULTS
+		echo " 	and run again" 
+		exit 1
+	fi
+		
+}
+
+
+
+############### main script #######################
+
+DOCKERNAME="dummy_default"
+DOCKERINFO=$PWD/dockerinfo.txt
+USERNAME="johndoe"
+DOCKERUSERLOG="/data_sbgamma/alphafold/"`whoami`".log"
+DIR="test"
+DIROK="0"
+FASTA="nothing.fasta"
+FASTASIZE="0"
+TEMPDATE="1985-21-11"
+RESULTS="mydata"
+MULTI="something"
+RUN_SCRIPT="bla.sh"
+RUN_DATE="bla.py"
+STARTED=""
+FINISHED=""
+HOST="me"
+
+
+if [[ $# -eq 0 ]] ; then
+	### no arguments, run over user-input
+	print_warning_setup
+	read -p "	Continue (y/n)?" CONT
+	DATE=`date +%Y_%m_%d_%H%M`
+	if [ "$CONT" = "y" ]; then
+		### check there is indeed an alphafold install
+		check_directory
+		#### read run parameters
+		read_run_parameters
+		#### write the docker running script
+		read -p "	Multimer-run (y/n)? " MULTI
+		write_run_script
+		print_run_parameters
+		print_ready
+		read -p "	RUN (y/n)?" RYN
+		if [ "$RYN" = "y" ]; then
+			run_script
+		else
+			print_doing_nothing
+		fi
+	else
+		print_doing_nothing
+	fi
+else
+	### check the number of arguments
+	if [ "$#" -lt 6 ]; then
+		if  [[ "$#" -eq 1 ]] ; then
+			print_help
+		else
+			echo	"	Missed argumets: you passed " $#  
+			echo 	" 	Please try again"
+			print_doing_nothing
+		fi
+	else
+		FASTA=$2
+		TEMPDATE=$4
+		RESULTS=$6
+		MULTI="n"
+		write_run_script
+		print_run_parameters
+		print_ready
+		read -p "	RUN (y/n)?" RYN
+		if [ "$RYN" = "y" ]; then
+			run_script
+		else
+			print_doing_nothing
+		fi
+		
+	fi	
+
+fi
